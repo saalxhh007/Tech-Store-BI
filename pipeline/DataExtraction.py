@@ -18,16 +18,36 @@ class DataExtraction():
     # image Cleaning before traitment
     def img_preprocess(self, roi):
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (5,5), 0)
 
-        return cv2.adaptiveThreshold(
-            gray,
-            255,
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        gray = clahe.apply(gray)
+        gray = cv2.GaussianBlur(gray, (3,3), 0)
+
+        thresh = cv2.adaptiveThreshold(
+            gray, 255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
-            15,
-            3
-    )
+            15, 3
+        )
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
+        thresh = cv2.dilate(thresh, kernel, iterations=1)
+        return thresh
+
+    def correct_ocr_text(self,text, field):
+        text = text.strip()
+        if field == "product_name":
+            corrections = {
+                "Alr": "Air",
+                "Uiva": "Ultra",
+                "Oeil": "Dell",
+                "$23": "S23",
+                "xPS": "XPS"
+            }
+            for wrong, right in corrections.items():
+                text = text.replace(wrong, right)
+        elif field in ["order_id", "quantity", "unit_price", "total_price", "client_id"]:
+            text = ''.join([c for c in text if c.isdigit() or c == "C"])
+        return text
 
     # connect to the database
     def _connect_db(self):
@@ -47,6 +67,7 @@ class DataExtraction():
             try:
                 cursor.execute(f"SELECT * FROM {table}")
                 res[name] = cursor.fetchall()
+                # print(name)
             except cn.Error as e:
                 print(f"Error fetching from {table}:", e)
 
@@ -62,39 +83,35 @@ class DataExtraction():
     # Extract data from image {file , personal_info: ID, Name... , product_info: Name, Quantity, Unit & Total Price}
     def image_pipeline(self, img_paths):
         extracted = []
+
         for path in img_paths:
-            # print(path)
             image = cv2.imread(path)
             if image is None:
                 print("Error: Could not load image")
                 continue
 
-            y1, y2, x1, x2 = self.ROI_positions["info_roi"]
-            info_roi = image[y1:y2, x1:x2]
-            info_text = pytesseract.image_to_string(
-                self.img_preprocess(info_roi),
-                config=self.OCR_config
-            )
+            record = {"file": path}
 
-            y1, y2, x1, x2 = self.ROI_positions["products_roi"]
-            products_roi = image[y1:y2, x1:x2]
-            products_text = pytesseract.image_to_string(
-                self.img_preprocess(products_roi),
-                config=self.OCR_config
-            )
-            extracted.append({
-                "file": path,
-                "info": info_text.strip(),
-                "product": products_text.strip()
-            })
-            # cv2.rectangle(image, (30,100), (550,250), (255,0,0), 2)
-            # cv2.rectangle(image, (30,250), (550,350), (0,255,0), 2)
+            for field_name, (y1, y2, x1, x2) in self.ROI_positions.items():
+                roi = image[y1:y2, x1:x2]
+
+                text = pytesseract.image_to_string(
+                    self.img_preprocess(roi),
+                    config=self.OCR_config
+                )
+
+                corrected_text = self.correct_ocr_text(text, field_name)
+                record[field_name] = corrected_text
+
+                # cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+            extracted.append(record)
 
             # cv2.imshow("ROIs", image)
             # cv2.waitKey(0)
             # cv2.destroyAllWindows()
+
         return extracted
-    
     # Extract data from web {Title, ID, Old Price, Price}
     def webscraping(self, url):
         products = []

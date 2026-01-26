@@ -1,7 +1,8 @@
-from pprint import pprint
-import glob
+from pipeline.DataCleaning import Data_cleaning
+from pipeline.DataExtraction import DataExtraction
 
-from data_extraction import DataExtraction
+import glob
+from pprint import pprint
 
 db_config = {
     "user": "student_user_4ing",
@@ -32,8 +33,13 @@ image_paths = glob.glob("./../data/legacy invoices/*.jpg")
 test_url = "https://boughida.com/competitor/"
 
 roi_positions = {
-    "info_roi": (100, 250, 30, 550),
-    "products_roi": (300, 400, 30, 550)
+    "date": (100, 160, 100, 230),
+    "order_id": (100, 160, 430, 490),
+    "client_info": (180, 280, 50,270),
+    "product_name": (300, 350, 30, 200),
+    "product_quantity": (300, 350, 290, 320),
+    "unit_price": (300, 350, 345, 420),
+    "total_price": (300, 350, 470, 550)
 }
 
 extractor = DataExtraction(
@@ -42,32 +48,15 @@ extractor = DataExtraction(
     ROI_positions=roi_positions
 )
 
-print("\n========== DATA EXTRACTION TEST ==========\n")
-
-print("---- MySQL Extraction ----")
 mysql_data = extractor.mysql_extraction(tables)
-print("\n--- MYSQL (SAMPLES) ---")
-for table, rows in mysql_data.items():
-    print(f"\nTable: {table}")
-    pprint(rows[:3])
-
-print("\n---- Excel Extraction ----")
 excel_data = extractor.excel_extraction(excel_paths)
-for name, df in excel_data.items():
-    print(f"\n{name.upper()}")
-    print(df.head(3))
+image_data = extractor.image_pipeline(image_paths)
+web_data = extractor.webscraping(test_url)
 
+transforming = Data_cleaning(excel_data, image_data, web_data, mysql_data)
+ocr_transformed = transforming.clean_transform_ocr()
+sentiment_analyzer = transforming.sentiment_analysis()
+clean_excel = transforming.clean_transform_excel()
 
-print("\n---- OCR Image Pipeline ----")
-ocr_results = extractor.image_pipeline(image_paths)
-
-for result in ocr_results:
-    print("\nFile:", result["file"])
-    print("INFO:")
-    print(result["info"])
-    print("PRODUCT:")
-    print(result["product"])
-
-print("\n---- Web Scraping ----")
-products = extractor.webscraping(test_url)
-pprint(products[:5])
+web = transforming.clean_web_data()
+net_profit = transforming.calculate_net_profit()
