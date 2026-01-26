@@ -1,5 +1,6 @@
 from pipeline.DataCleaning import Data_cleaning
 from pipeline.DataExtraction import DataExtraction
+from pipeline.Data_Loading import DataLoading
 
 import glob
 from pprint import pprint
@@ -19,16 +20,16 @@ tables = {
     "subcategories": "table_subcategories",
     "stores": "table_stores",
     "customers": "table_customers",
-    "stores": "table_cities",
+    "cities": "table_cities"
 }
 
 excel_paths = {
-    "marketing": "./../data/excel/marketing_expenses.xlsx",
-    "targets": "./../data/excel/monthly_targets.xlsx",
-    "shipping": "./../data/excel/shipping_rates.xlsx"
+    "marketing": "./data/excel/marketing_expenses.xlsx",
+    "targets": "./data/excel/monthly_targets.xlsx",
+    "shipping": "./data/excel/shipping_rates.xlsx"
 }
 
-image_paths = glob.glob("./../data/legacy invoices/*.jpg")
+image_paths = glob.glob("./data/legacy invoices/*.jpg")
 
 test_url = "https://boughida.com/competitor/"
 
@@ -52,11 +53,26 @@ mysql_data = extractor.mysql_extraction(tables)
 excel_data = extractor.excel_extraction(excel_paths)
 image_data = extractor.image_pipeline(image_paths)
 web_data = extractor.webscraping(test_url)
+                    
+transformer = Data_cleaning(excel_data, image_data, web_data, mysql_data)
 
-transforming = Data_cleaning(excel_data, image_data, web_data, mysql_data)
-ocr_transformed = transforming.clean_transform_ocr()
-sentiment_analyzer = transforming.sentiment_analysis()
-clean_excel = transforming.clean_transform_excel()
+ocr_transformed = transformer.clean_transform_ocr()
+sentiment_analyzer = transformer.sentiment_analysis()
+excel_transformed = transformer.clean_transform_excel()
+# database_transformed = transformer.clean_database()
+web_transformed = transformer.clean_web_data()
+net_profit = transformer.calculate_net_profit()
 
-web = transforming.clean_web_data()
-net_profit = transforming.calculate_net_profit()
+loader = DataLoading(excel_transformed,
+                    web_transformed, 
+                    ocr_transformed, 
+                    sentiment_analyzer, 
+                    net_profit,
+                    mysql_data
+                    )
+
+loader.load_fact_sales()
+loader.load_dim_product()
+loader.load_dim_customer()
+loader.load_dim_store()
+loader.load_dim_date()
